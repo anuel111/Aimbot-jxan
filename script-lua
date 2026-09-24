@@ -1,0 +1,186 @@
+--[[
+    Venice's BlockSpin Exploit Pack
+    Aimbot + Speed Hack
+    Version 1.0
+]]
+
+-- Servicios
+local Players = game:GetService("Players")
+local UserInputService = game:GetService("UserInputService")
+local RunService = game:GetService("RunService")
+local TweenService = game:GetService("TweenService")
+local Camera = workspace.CurrentCamera
+
+-- Jugador local
+local LocalPlayer = Players.LocalPlayer
+local Mouse = LocalPlayer:GetMouse()
+
+-- Variables del Aimbot
+local aimbotEnabled = false
+local aimKey = Enum.KeyCode.Q -- Tecla para activar/desactivar el aimbot (mantener pulsada)
+local fovSize = 150 -- Tamaño del círculo de detección
+local aimSmoothness = 0.1 -- Que tan suave es el apuntado (más bajo = más rápido)
+
+-- Variables de Velocidad
+local speedEnabled = false
+local speedMultiplier = 2 -- Cuántas veces más rápido correrás (2 = el doble)
+local normalWalkSpeed = 16
+
+-- --- INTERFAZ GRÁFICA (GUI) ---
+local screenGui = Instance.new("ScreenGui")
+screenGui.Name = "AimbotMenu"
+screenGui.Parent = game:GetService("CoreGui")
+screenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+
+local mainFrame = Instance.new("Frame")
+mainFrame.Size = UDim2.new(0, 250, 0, 200)
+mainFrame.Position = UDim2.new(0, 10, 0, 100)
+mainFrame.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+mainFrame.BorderSizePixel = 0
+mainFrame.Parent = screenGui
+mainFrame.Draggable = true -- Hacer la ventana arrastrable
+
+local corner = Instance.new("UICorner")
+corner.CornerRadius = UDim.new(0, 10)
+corner.Parent = mainFrame
+
+local titleLabel = Instance.new("TextLabel")
+titleLabel.Size = UDim2.new(1, 0, 0, 30)
+titleLabel.Position = UDim2.new(0, 0, 0, 0)
+titleLabel.BackgroundTransparency = 1
+titleLabel.Text = "Venice Exploits"
+titleLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+titleLabel.TextScaled = true
+titleLabel.Font = Enum.Font.GothamBold
+titleLabel.Parent = mainFrame
+
+-- Botón para el Aimbot
+local aimbotButton = Instance.new("TextButton")
+aimbotButton.Size = UDim2.new(0, 200, 0, 40)
+aimbotButton.Position = UDim2.new(0, 25, 0, 50)
+aimbotButton.BackgroundColor3 = Color3.fromRGB(255, 0, 0)
+aimbotButton.BorderSizePixel = 0
+aimbotButton.Text = "Aimbot: OFF"
+aimbotButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+aimbotButton.TextScaled = true
+aimbotButton.Font = Enum.Font.Gotham
+aimbotButton.Parent = mainFrame
+
+local aimbotCorner = Instance.new("UICorner")
+aimbotCorner.CornerRadius = UDim.new(0, 5)
+aimbotCorner.Parent = aimbotButton
+
+-- Botón para la Velocidad
+local speedButton = Instance.new("TextButton")
+speedButton.Size = UDim2.new(0, 200, 0, 40)
+speedButton.Position = UDim2.new(0, 25, 0, 110)
+speedButton.BackgroundColor3 = Color3.fromRGB(255, 0, 0)
+speedButton.BorderSizePixel = 0
+speedButton.Text = "Speed: OFF"
+speedButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+speedButton.TextScaled = true
+speedButton.Font = Enum.Font.Gotham
+speedButton.Parent = mainFrame
+
+local speedCorner = Instance.new("UICorner")
+speedCorner.CornerRadius = UDim.new(0, 5)
+speedCorner.Parent = speedButton
+
+-- --- CÍRCULO DE AIMBOT (FOV CIRCLE) ---
+local fovCircle = Drawing.new("Circle")
+fovCircle.Radius = fovSize
+fovCircle.Thickness = 1
+fovCircle.Color = Color3.fromRGB(255, 255, 255)
+fovCircle.Transparency = 0.5
+fovCircle.Visible = true
+
+-- --- FUNCIONES ---
+
+-- Función para encontrar al enemigo más cercano
+local function getClosestPlayerToCursor()
+    local closestPlayer = nil
+    local shortestDistance = fovSize
+
+    for _, player in ipairs(Players:GetPlayers()) do
+        if player ~= LocalPlayer and player.Character and player.Character:FindFirstChild("Humanoid") and player.Character:FindFirstChild("HumanoidRootPart") then
+            if player.Character.Humanoid.Health > 0 then
+                local screenPos, onScreen = Camera:WorldToViewportPoint(player.Character.HumanoidRootPart.Position)
+                if onScreen then
+                    local distance = (Vector2.new(screenPos.X, screenPos.Y) - Vector2.new(Mouse.X, Mouse.Y)).Magnitude
+                    if distance < shortestDistance then
+                        shortestDistance = distance
+                        closestPlayer = player
+                    end
+                end
+            end
+        end
+    end
+
+    return closestPlayer
+end
+
+-- Función para apuntar al jugador
+local function aimAt(player)
+    if player and player.Character and player.Character:FindFirstChild("Head") then
+        local targetPosition = player.Character.Head.Position
+        local currentCFrame = Camera.CFrame
+        local targetCFrame = CFrame.new(currentCFrame.Position, targetPosition)
+
+        -- Apuntado suave para evadir anticheat
+        Camera.CFrame = currentCFrame:Lerp(targetCFrame, aimSmoothness)
+    end
+end
+
+-- --- CONEXIONES DE EVENTOS ---
+
+-- Conexión del botón de Aimbot
+aimbotButton.MouseButton1Click:Connect(function()
+    aimbotEnabled = not aimbotEnabled
+    if aimbotEnabled then
+        aimbotButton.Text = "Aimbot: ON"
+        aimbotButton.BackgroundColor3 = Color3.fromRGB(0, 255, 0)
+    else
+        aimbotButton.Text = "Aimbot: OFF"
+        aimbotButton.BackgroundColor3 = Color3.fromRGB(255, 0, 0)
+    end
+end)
+
+-- Conexión del botón de Velocidad
+speedButton.MouseButton1Click:Connect(function()
+    speedEnabled = not speedEnabled
+    if speedEnabled then
+        speedButton.Text = "Speed: ON"
+        speedButton.BackgroundColor3 = Color3.fromRGB(0, 255, 0)
+        LocalPlayer.Character.Humanoid.WalkSpeed = normalWalkSpeed * speedMultiplier
+    else
+        speedButton.Text = "Speed: OFF"
+        speedButton.BackgroundColor3 = Color3.fromRGB(255, 0, 0)
+        if LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("Humanoid") then
+            LocalPlayer.Character.Humanoid.WalkSpeed = normalWalkSpeed
+        end
+    end
+end)
+
+-- Bucle principal del Aimbot
+RunService.RenderStepped:Connect(function()
+    -- Actualizar posición del círculo FOV
+    fovCircle.Position = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y / 2)
+
+    -- Lógica del Aimbot
+    if aimbotEnabled and UserInputService:IsKeyDown(aimKey) then
+        local target = getClosestPlayerToCursor()
+        if target then
+            aimAt(target)
+        end
+    end
+end)
+
+-- Asegurarse de que la velocidad se restablezca si el personaje muere y reaparece
+LocalPlayer.CharacterAdded:Connect(function(character)
+    character:WaitForChild("Humanoid")
+    if not speedEnabled then
+        character.Humanoid.WalkSpeed = normalWalkSpeed
+    end
+end)
+
+print("Script cargado exitosamente. Usa el menú en la pantalla para activar/desactivar las funciones.")
