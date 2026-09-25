@@ -1,31 +1,155 @@
---[[
-    Venice's BlockSpin Exploit Pack
-    Aimbot + Speed Hack
-    Version 1.1 (Fix: Velocidad funcional)
-]]
+-- CONFIGURACIÓN FÁCIL
+local Settings = {
+    Key = Enum.KeyCode.F,           -- Tecla para activar/desactivar (F)
+    MaxDistance = 300,              -- Distancia máxima para detectar enemigos (studs)
+    FieldOfView = 15,               -- Sensibilidad (cuanto menor el número, más preciso pero más rápido necesitas mover el mouse)
+    Smoothness = 0.2,               -- Suavizado (0 = instantáneo, 1 = muy lento)
+    AutoFire = true,                -- Disparar automáticamente
+    FireRate = 0.1,                 -- Velocidad de disparo (segundos entre cada bala)
+    TargetPart = "Head",            -- Parte del cuerpo: "Head", "HumanoidRootPart", etc.
+    Enabled = true                  -- Estado inicial
+}
 
--- Servicios
+-- Variables internas
 local Players = game:GetService("Players")
-local UserInputService = game:GetService("UserInputService")
 local RunService = game:GetService("RunService")
-local TweenService = game:GetService("TweenService")
+local UserInputService = game:GetService("UserInputService")
 local Camera = workspace.CurrentCamera
-
--- Jugador local
 local LocalPlayer = Players.LocalPlayer
 local Mouse = LocalPlayer:GetMouse()
 
--- Variables del Aimbot
-local aimbotEnabled = false
-local aimKey = Enum.KeyCode.Q -- Tecla para activar/desactivar el aimbot (mantener pulsada)
-local fovSize = 150 -- Tamaño del círculo de detección
-local aimSmoothness = 0.1 -- Que tan suave es el apuntado (más bajo = más rápido)
+-- Estado
+local isAimbotOn = true
+local targetPart = nil
+local lastFireTime = 0
+local currentX = Mouse.X
+local currentY = Mouse.Y
 
--- Variables de Velocidad
-local speedEnabled = false
-local speedMultiplier = 2 -- Cuántas veces más rápido correrás (2 = el doble)
-local baseWalkSpeed = 16 -- Velocidad normal guardada
+-- Crear GUI para saber que está activo
+local ScreenGui = Instance.new("ScreenGui")
+ScreenGui.Name = "AimbotGUI"
+ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 
--- --- INTERFAZ GRÁFICA (GUI) ---
-local screenGui = Instance.new("ScreenGui")
-screenGui
+local Frame = Instance.new("Frame")
+Frame.Name = "StatusFrame"
+Frame.Size = UDim2.new(0, 200, 0, 40)
+Frame.Position = UDim2.new(0, 10, 0, 10)
+Frame.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+Frame.BackgroundTransparency = 0.5
+Frame.BorderSizePixel = 0
+
+local Label = Instance.new("TextLabel")
+Label.Name = "StatusLabel"
+Label.Size = UDim2.new(1, 0, 1, 0)
+Label.BackgroundTransparency = 1
+Label.Text = "Aimbot: ON"
+Label.TextColor3 = Color3.fromRGB(0, 255, 0)
+Label.Font = Enum.Font.GothamBold
+Label.TextSize = 18
+Label.Parent = Frame
+
+Frame.Parent = ScreenGui
+ScreenGui.Parent = LocalPlayer:WaitForChild("PlayerGui")
+
+-- Función para convertir 3D a 2D
+function WorldToScreen(Position)
+    local Vector = Camera:WorldToViewportPoint(Position)
+    return Vector2new(Vector.X, Vector.Y), Vector.Z > 0
+end
+
+-- Loop Principal
+RunService.RenderStepped:Connect(function()
+    if not Settings.Enabled then return end
+    
+    if not Camera or not Camera:IsA("Camera") then return end -- Evita errores si la cámara no carga
+
+    -- Buscar el mejor objetivo
+    local bestTarget = nil
+    local bestDist = math.huge
+
+    for _, Player in pairs(Players:GetPlayers()) do
+        if Player ~= LocalPlayer and Player.Character and Player.Character:FindFirstChild(Settings.TargetPart) and Player.Character:FindFirstChild("Humanoid") and Player.Character.Humanoid.Health > 0 then
+            local Target = Player.Character:FindFirstChild(Settings.TargetPart)
+            if Target then
+                local Pos2D, OnScreen = WorldToScreen(Target.Position)
+                if OnScreen then
+                    local Dist = (Camera.CFrame.Position - Target.Position).Magnitude
+                    if Dist < Settings.MaxDistance then
+                        -- Calcular distancia al centro de la pantalla
+                        local Center = Vector2new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y / 2)
+                        local DistFromCenter = (Pos2D - Center).Magnitude
+                        
+                        if DistFromCenter < Settings.FieldOfView and Dist < bestDist then
+                            bestDist = Dist
+                            bestTarget = Target
+                        end
+                    end
+                end
+            end
+        end
+    end
+
+    -- Si encontramos un objetivo, mover el mouse
+    if bestTarget then
+        local Pos2D, _ = WorldToScreen(bestTarget.Position)
+        
+        -- Suavizado (Lerp)
+        currentX = currentX + (Pos2D.X - currentX) * Settings.Smoothness
+        currentY = currentY + (Pos2D.Y - currentY) * Settings.Smoothness
+        
+        Mouse.X = currentX
+        Mouse.Y = currentY
+        
+        -- Auto Fire
+        if Settings.AutoFire and game:GetService("Players").LocalPlayer:GetMouse().Button1Down == false then
+            -- Simular click solo si no se está manteniendo presionado ya (opcional, depende del juego)
+            -- Para maximizar la efectividad, a veces es mejor dejar que el usuario mantenga clic
+            -- Pero si quieres auto-fire puro:
+            -- Mouse.Button1Down()
+            -- Mouse.Button1Up()
+            
+            -- Mejor estrategia: Disparar solo si la mira está fija un momento
+            if tick() - lastFireTime > Settings.FireRate then
+                Mouse.Button1Down()
+                lastFireTime = tick()
+            end
+        end
+        
+        -- Cambiar color de la GUI a rojo para indicar objetivo
+        Label.Text = "Target: " .. bestTarget.Name.Parent.Name
+        Label.TextColor3 = Color3.fromRGB(255, 50, 50)
+    else
+        -- Si no hay objetivo, volver a la posición original o mantener la última
+        -- Label.Text = "Aimbot: ON"
+        -- Label.TextColor3 = Color3.fromRGB(0, 255, 0)
+        
+        -- Resetear suavemente al centro si no hay objetivo (opcional)
+        -- local Center = Vector2new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y / 2)
+        -- currentX = currentX + (Center.X - currentX) * 0.1
+        -- currentY = currentY + (Center.Y - currentY) * 0.1
+    end
+end)
+
+-- Control de Tecla
+UserInputService.InputBegan:Connect(function(Input, IsGameProcessed)
+    if Input.KeyCode == Settings.Key then
+        Settings.Enabled = not Settings.Enabled
+        isAimbotOn = Settings.Enabled
+        
+        if isAimbotOn then
+            Label.Text = "Aimbot: ON"
+            Label.TextColor3 = Color3.fromRGB(0, 255, 0)
+        else
+            Label.Text = "Aimbot: OFF"
+            Label.TextColor3 = Color3.fromRGB(255, 0, 0)
+            -- Devolver el mouse al centro cuando se apaga
+            local Center = Vector2new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y / 2)
+            currentX = Center.X
+            currentY = Center.Y
+            Mouse.X = currentX
+            Mouse.Y = currentY
+        end
+    end
+end)
+
+print("Aimbot Loaded Successfully.")
