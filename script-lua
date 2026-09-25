@@ -1,155 +1,102 @@
--- CONFIGURACIÓN FÁCIL
-local Settings = {
+-- CONFIGURACIÓN
+local Config = {
     Key = Enum.KeyCode.F,           -- Tecla para activar/desactivar (F)
-    MaxDistance = 300,              -- Distancia máxima para detectar enemigos (studs)
-    FieldOfView = 15,               -- Sensibilidad (cuanto menor el número, más preciso pero más rápido necesitas mover el mouse)
-    Smoothness = 0.2,               -- Suavizado (0 = instantáneo, 1 = muy lento)
-    AutoFire = true,                -- Disparar automáticamente
-    FireRate = 0.1,                 -- Velocidad de disparo (segundos entre cada bala)
-    TargetPart = "Head",            -- Parte del cuerpo: "Head", "HumanoidRootPart", etc.
-    Enabled = true                  -- Estado inicial
+    Color = Color3.new(1, 0, 0),    -- Color del círculo (Rojo)
+    Size = 20,                      -- Tamaño del círculo (píxeles)
+    Thickness = 2,                  -- Grosor de línea
+    AutoFire = true,                -- Disparar automático
+    FireDelay = 0.05,               -- Velocidad de disparo (muy rápido)
+    Smoothness = 0,                 -- 0 = Inmediato (máxima velocidad), 0.5 = Suave
+    MaxDistance = 500,              -- Distancia máxima
+    TargetPart = "Head",            -- Prioridad de búsqueda
+    Visible = true                  -- Mostrar el círculo
 }
 
--- Variables internas
+-- Variables
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
 local Camera = workspace.CurrentCamera
 local LocalPlayer = Players.LocalPlayer
 local Mouse = LocalPlayer:GetMouse()
+local CoreGui = game:GetService("CoreGui")
 
 -- Estado
-local isAimbotOn = true
-local targetPart = nil
-local lastFireTime = 0
-local currentX = Mouse.X
-local currentY = Mouse.Y
+local IsOn = true
+local Target = nil
+local CurrentX, CurrentY = Mouse.X, Mouse.Y
 
--- Crear GUI para saber que está activo
+-- Crear el Círculo Visual (Guis)
 local ScreenGui = Instance.new("ScreenGui")
-ScreenGui.Name = "AimbotGUI"
+ScreenGui.Name = "AimbotCircle"
 ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+ScreenGui.ResetOnSpawn = false
 
 local Frame = Instance.new("Frame")
-Frame.Name = "StatusFrame"
-Frame.Size = UDim2.new(0, 200, 0, 40)
-Frame.Position = UDim2.new(0, 10, 0, 10)
-Frame.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
-Frame.BackgroundTransparency = 0.5
+Frame.Name = "Circle"
+Frame.Size = UDim2.new(0, Config.Size * 2, 0, Config.Size * 2)
+Frame.Position = UDim2.new(0.5, -Config.Size, 0.5, -Config.Size)
+Frame.BackgroundTransparency = 1
 Frame.BorderSizePixel = 0
+Frame.ClipsDescendants = true
 
-local Label = Instance.new("TextLabel")
-Label.Name = "StatusLabel"
-Label.Size = UDim2.new(1, 0, 1, 0)
-Label.BackgroundTransparency = 1
-Label.Text = "Aimbot: ON"
-Label.TextColor3 = Color3.fromRGB(0, 255, 0)
-Label.Font = Enum.Font.GothamBold
-Label.TextSize = 18
-Label.Parent = Frame
+local LineTop = Instance.new("Frame")
+LineTop.Size = UDim2.new(0, Config.Thickness, 1, 0)
+LineTop.Position = UDim2.new(0.5, -Config.Thickness/2, 0, 0)
+LineTop.BackgroundColor3 = Config.Color
+
+local LineBottom = Instance.new("Frame")
+LineBottom.Size = UDim2.new(0, Config.Thickness, 1, 0)
+LineBottom.Position = UDim2.new(0.5, -Config.Thickness/2, 1, 0) -- Ajuste visual simple
+
+local LineLeft = Instance.new("Frame")
+LineLeft.Size = UDim2.new(1, 0, 0, Config.Thickness)
+LineLeft.Position = UDim2.new(0, 0, 0.5, -Config.Thickness/2)
+LineLeft.BackgroundColor3 = Config.Color
+
+local LineRight = Instance.new("Frame")
+LineRight.Size = UDim2.new(1, 0, 0, Config.Thickness)
+LineRight.Position = UDim2.new(0, 0, 0.5, -Config.Thickness/2)
+LineRight.BackgroundColor3 = Config.Color
+
+-- En realidad, para un círculo perfecto en Roblox UI sin plugins, usamos un ImageLabel o Border
+-- Pero para máxima compatibilidad y velocidad, usaremos un Frame con borde:
+Frame.BorderSizePixel = Config.Thickness
+Frame.BackgroundColor3 = Config.Color
+Frame.BackgroundTransparency = 0.5 -- Semi-transparente para ver detrás
 
 Frame.Parent = ScreenGui
-ScreenGui.Parent = LocalPlayer:WaitForChild("PlayerGui")
+ScreenGui.Parent = CoreGui -- Usamos CoreGui para que se vea siempre
 
--- Función para convertir 3D a 2D
-function WorldToScreen(Position)
-    local Vector = Camera:WorldToViewportPoint(Position)
+-- Función 3D a 2D
+function GetScreenPos(Pos)
+    local Vector = Camera:WorldToViewportPoint(Pos)
     return Vector2new(Vector.X, Vector.Y), Vector.Z > 0
 end
 
 -- Loop Principal
 RunService.RenderStepped:Connect(function()
-    if not Settings.Enabled then return end
+    if not IsOn then return end
     
-    if not Camera or not Camera:IsA("Camera") then return end -- Evita errores si la cámara no carga
+    if not Camera then return end
 
-    -- Buscar el mejor objetivo
-    local bestTarget = nil
-    local bestDist = math.huge
+    local BestPart = nil
+    local BestScore = math.huge
+    local Center = Vector2new(Camera.ViewportSize.X/2, Camera.ViewportSize.Y/2)
 
+    -- Iterar jugadores
     for _, Player in pairs(Players:GetPlayers()) do
-        if Player ~= LocalPlayer and Player.Character and Player.Character:FindFirstChild(Settings.TargetPart) and Player.Character:FindFirstChild("Humanoid") and Player.Character.Humanoid.Health > 0 then
-            local Target = Player.Character:FindFirstChild(Settings.TargetPart)
-            if Target then
-                local Pos2D, OnScreen = WorldToScreen(Target.Position)
-                if OnScreen then
-                    local Dist = (Camera.CFrame.Position - Target.Position).Magnitude
-                    if Dist < Settings.MaxDistance then
-                        -- Calcular distancia al centro de la pantalla
-                        local Center = Vector2new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y / 2)
-                        local DistFromCenter = (Pos2D - Center).Magnitude
-                        
-                        if DistFromCenter < Settings.FieldOfView and Dist < bestDist then
-                            bestDist = Dist
-                            bestTarget = Target
-                        end
-                    end
-                end
-            end
-        end
-    end
+        if Player ~= LocalPlayer and Player.Character then
+            local Hum = Player.Character:FindFirstChild("Humanoid")
+            if Hum and Hum.Health > 0 then
+                -- Buscar partes útiles
+                local PartsToCheck = {
+                    Player.Character:FindFirstChild("Head"),
+                    Player.Character:FindFirstChild("HumanoidRootPart"),
+                    Player.Character:FindFirstChild("Torso"),
+                    Player.Character:FindFirstChild("UpperTorso")
+                }
 
-    -- Si encontramos un objetivo, mover el mouse
-    if bestTarget then
-        local Pos2D, _ = WorldToScreen(bestTarget.Position)
-        
-        -- Suavizado (Lerp)
-        currentX = currentX + (Pos2D.X - currentX) * Settings.Smoothness
-        currentY = currentY + (Pos2D.Y - currentY) * Settings.Smoothness
-        
-        Mouse.X = currentX
-        Mouse.Y = currentY
-        
-        -- Auto Fire
-        if Settings.AutoFire and game:GetService("Players").LocalPlayer:GetMouse().Button1Down == false then
-            -- Simular click solo si no se está manteniendo presionado ya (opcional, depende del juego)
-            -- Para maximizar la efectividad, a veces es mejor dejar que el usuario mantenga clic
-            -- Pero si quieres auto-fire puro:
-            -- Mouse.Button1Down()
-            -- Mouse.Button1Up()
-            
-            -- Mejor estrategia: Disparar solo si la mira está fija un momento
-            if tick() - lastFireTime > Settings.FireRate then
-                Mouse.Button1Down()
-                lastFireTime = tick()
-            end
-        end
-        
-        -- Cambiar color de la GUI a rojo para indicar objetivo
-        Label.Text = "Target: " .. bestTarget.Name.Parent.Name
-        Label.TextColor3 = Color3.fromRGB(255, 50, 50)
-    else
-        -- Si no hay objetivo, volver a la posición original o mantener la última
-        -- Label.Text = "Aimbot: ON"
-        -- Label.TextColor3 = Color3.fromRGB(0, 255, 0)
-        
-        -- Resetear suavemente al centro si no hay objetivo (opcional)
-        -- local Center = Vector2new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y / 2)
-        -- currentX = currentX + (Center.X - currentX) * 0.1
-        -- currentY = currentY + (Center.Y - currentY) * 0.1
-    end
-end)
-
--- Control de Tecla
-UserInputService.InputBegan:Connect(function(Input, IsGameProcessed)
-    if Input.KeyCode == Settings.Key then
-        Settings.Enabled = not Settings.Enabled
-        isAimbotOn = Settings.Enabled
-        
-        if isAimbotOn then
-            Label.Text = "Aimbot: ON"
-            Label.TextColor3 = Color3.fromRGB(0, 255, 0)
-        else
-            Label.Text = "Aimbot: OFF"
-            Label.TextColor3 = Color3.fromRGB(255, 0, 0)
-            -- Devolver el mouse al centro cuando se apaga
-            local Center = Vector2new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y / 2)
-            currentX = Center.X
-            currentY = Center.Y
-            Mouse.X = currentX
-            Mouse.Y = currentY
-        end
-    end
-end)
-
-print("Aimbot Loaded Successfully.")
+                for _, Part in pairs(PartsToCheck) do
+                    if Part then
+                        local Pos2D
