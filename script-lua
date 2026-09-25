@@ -1,15 +1,15 @@
 -- CONFIGURACIÓN
 local Config = {
     Key = Enum.KeyCode.F,           -- Tecla para activar/desactivar (F)
-    Color = Color3.new(1, 0, 0),    -- Color del círculo (Rojo)
-    Size = 20,                      -- Tamaño del círculo (píxeles)
+    Color = Color3.new(1, 0, 0),    -- Color de la mira (Rojo)
+    Size = 20,                      -- Tamaño de los brazos de la cruz (píxeles)
     Thickness = 2,                  -- Grosor de línea
     AutoFire = true,                -- Disparar automático
     FireDelay = 0.05,               -- Velocidad de disparo (muy rápido)
     Smoothness = 0,                 -- 0 = Inmediato (máxima velocidad), 0.5 = Suave
     MaxDistance = 500,              -- Distancia máxima
     TargetPart = "Head",            -- Prioridad de búsqueda
-    Visible = true                  -- Mostrar el círculo
+    Visible = true                  -- Mostrar la mira
 }
 
 -- Variables
@@ -26,46 +26,50 @@ local IsOn = true
 local Target = nil
 local CurrentX, CurrentY = Mouse.X, Mouse.Y
 
--- Crear el Círculo Visual (Guis)
+-- Crear la Mira Visual (Cruz)
 local ScreenGui = Instance.new("ScreenGui")
-ScreenGui.Name = "AimbotCircle"
+ScreenGui.Name = "AimbotCrosshair"
 ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 ScreenGui.ResetOnSpawn = false
 
-local Frame = Instance.new("Frame")
-Frame.Name = "Circle"
-Frame.Size = UDim2.new(0, Config.Size * 2, 0, Config.Size * 2)
-Frame.Position = UDim2.new(0.5, -Config.Size, 0.5, -Config.Size)
-Frame.BackgroundTransparency = 1
-Frame.BorderSizePixel = 0
-Frame.ClipsDescendants = true
+-- Creamos una cruz real con 4 líneas
+local Cross = Instance.new("Frame")
+Cross.Name = "Crosshair"
+Cross.Size = UDim2.new(0, Config.Size * 2, 0, Config.Size * 2)
+Cross.Position = UDim2.new(0.5, -Config.Size, 0.5, -Config.Size)
+Cross.BackgroundTransparency = 1
+Cross.BorderSizePixel = 0
+Cross.ClipsDescendants = true
 
+-- Línea Superior
 local LineTop = Instance.new("Frame")
 LineTop.Size = UDim2.new(0, Config.Thickness, 1, 0)
 LineTop.Position = UDim2.new(0.5, -Config.Thickness/2, 0, 0)
 LineTop.BackgroundColor3 = Config.Color
 
+-- Línea Inferior
 local LineBottom = Instance.new("Frame")
 LineBottom.Size = UDim2.new(0, Config.Thickness, 1, 0)
-LineBottom.Position = UDim2.new(0.5, -Config.Thickness/2, 1, 0) -- Ajuste visual simple
+LineBottom.Position = UDim2.new(0.5, -Config.Thickness/2, 1, 0)
+LineBottom.BackgroundColor3 = Config.Color
 
+-- Línea Izquierda
 local LineLeft = Instance.new("Frame")
 LineLeft.Size = UDim2.new(1, 0, 0, Config.Thickness)
 LineLeft.Position = UDim2.new(0, 0, 0.5, -Config.Thickness/2)
 LineLeft.BackgroundColor3 = Config.Color
 
+-- Línea Derecha
 local LineRight = Instance.new("Frame")
 LineRight.Size = UDim2.new(1, 0, 0, Config.Thickness)
 LineRight.Position = UDim2.new(0, 0, 0.5, -Config.Thickness/2)
 LineRight.BackgroundColor3 = Config.Color
 
--- En realidad, para un círculo perfecto en Roblox UI sin plugins, usamos un ImageLabel o Border
--- Pero para máxima compatibilidad y velocidad, usaremos un Frame con borde:
-Frame.BorderSizePixel = Config.Thickness
-Frame.BackgroundColor3 = Config.Color
-Frame.BackgroundTransparency = 0.5 -- Semi-transparente para ver detrás
-
-Frame.Parent = ScreenGui
+LineTop.Parent = Cross
+LineBottom.Parent = Cross
+LineLeft.Parent = Cross
+LineRight.Parent = Cross
+Cross.Parent = ScreenGui
 ScreenGui.Parent = CoreGui -- Usamos CoreGui para que se vea siempre
 
 -- Función 3D a 2D
@@ -99,4 +103,57 @@ RunService.RenderStepped:Connect(function()
 
                 for _, Part in pairs(PartsToCheck) do
                     if Part then
-                        local Pos2D
+                        local Pos2D, OnScreen = GetScreenPos(Part.Position)
+                        if OnScreen then
+                            local DistFromCenter = (Pos2D - Center).Magnitude
+                            local Dist3D = (Camera.CFrame.Position - Part.Position).Magnitude
+
+                            if DistFromCenter < Config.Size * 5 and Dist3D < Config.MaxDistance then
+                                if DistFromCenter < BestScore then
+                                    BestScore = DistFromCenter
+                                    BestPart = Part
+                                    Target = Player
+                                end
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end
+
+    -- Actualizar la mira visual
+    if BestPart then
+        local Pos2D, _ = GetScreenPos(BestPart.Position)
+        
+        -- Mover la UI de la mira
+        Cross.Position = UDim2.new(0, Pos2D.X - Config.Size, 0, Pos2D.Y - Config.Size)
+        
+        -- Auto Fire
+        if Settings and Settings.AutoFire then
+            if tick() - lastFireTime > Config.FireDelay then
+                Mouse.Button1Down()
+                lastFireTime = tick()
+            end
+        end
+    else
+        -- Volver al centro si no hay objetivo
+        Cross.Position = UDim2.new(0.5, -Config.Size, 0.5, -Config.Size)
+    end
+end)
+
+-- Control de Tecla
+UserInputService.InputBegan:Connect(function(Input, IsGameProcessed)
+    if Input.KeyCode == Config.Key then
+        IsOn = not IsOn
+        
+        if IsOn then
+            Cross.BackgroundColor3 = Config.Color
+        else
+            Cross.BackgroundColor3 = Color3.new(0.5, 0.5, 0.5) -- Gris cuando está apagado
+            Cross.Position = UDim2.new(0.5, -Config.Size, 0.5, -Config.Size)
+        end
+    end
+end)
+
+print("Aimbot Cargado Correctamente.")
